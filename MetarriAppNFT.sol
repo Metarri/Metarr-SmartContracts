@@ -5,13 +5,12 @@ pragma solidity >=0.7.0 <0.9.0;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title MetarriAppNFT
  * @dev Set App NFTs and their owners
  */
-contract MetarriAppNFT is ERC721, Ownable {
+contract MetarriAppNFT is ERC721 {
     //-- begin: declarations
 
     string contractName = "MetarriAppNFT";
@@ -20,22 +19,28 @@ contract MetarriAppNFT is ERC721, Ownable {
     struct AppNFTStruct {
         string appID;
         uint256 tokenId;
-        uint256 sellingPrice;
-        address owner;
+        uint256 sellingPriceInWei;
+        address currentOwner;
         bool isSellingOut;
+        bool exists;
     }
 
     /**
-     * An array of all the app NFTs
+     * A hashmap of App NFTs
      */
-    AppNFTStruct[] public appsAndOwners;
+    mapping(string => AppNFTStruct) public appNFTs;
 
     /**
      * event for EVM logging
      */
-    event OwnerSet(address indexed oldOwner, address indexed newOwner);
-
-    event APPNFTAdded(address indexed owner, uint256 price);
+    event APPNFTMinted(address indexed owner, uint256 price);
+    event APPNFTModified(address indexed modifiedBy, string appID);
+    event APPNFTDeleted(address indexed owner, string appID);
+    event APPNFTOwnershipTransfer(
+        address indexed oldOwner,
+        address indexed newOwner,
+        string appID
+    );
 
     // modifier to check if caller is owner
     modifier isContractOwner() {
@@ -52,65 +57,104 @@ contract MetarriAppNFT is ERC721, Ownable {
     constructor() ERC721("MetarriAppNFT", "MNFT") {
         // 'msg.sender' is sender of current call, contract deployer for a constructor
         contractOwner = msg.sender;
-        emit OwnerSet(address(0), contractOwner);
     }
 
     //-- End: declarations, begin: NFT array-manipulatng functions
 
-    function mintAppNFT(address recipient, string memory tokenURI)
-        public
-        returns (uint256)
-    {
+    function mintAppNFT(
+        address recipient,
+        string memory appID,
+        uint256 sellingPriceInWei,
+        bool isSellingOut
+    ) public returns (uint256) {
+        require(
+            appNFTs[appID].exists,
+            "This app has already been minted as an NFT!"
+        );
+
         _tokenIds.increment();
 
         uint256 newItemId = _tokenIds.current();
         _mint(recipient, newItemId);
 
+        appNFTs[appID] = AppNFTStruct({
+            appID: appID,
+            tokenId: newItemId,
+            sellingPriceInWei: sellingPriceInWei,
+            currentOwner: recipient,
+            isSellingOut: isSellingOut,
+            exists: true
+        });
+
         return newItemId;
     }
 
-    function updateAppNFT(string memory appID) public returns (bool) {
+    function updateAppNFT(
+        string memory appID,
+        uint256 sellingPriceInWei,
+        bool isSellingOut,
+        bool exists
+    ) public returns (bool) {
+        require(
+            appNFTs[appID].currentOwner != msg.sender,
+            "Only the owner of teh NFT is allowed to take action on it"
+        );
+
+        require(
+            !appNFTs[appID].exists,
+            "You are trying to update an NFT that doesn't exist!"
+        );
+
+        appNFTs[appID].appID = appID;
+        appNFTs[appID].sellingPriceInWei = sellingPriceInWei;
+        appNFTs[appID].isSellingOut = isSellingOut;
+        appNFTs[appID].exists = exists;
+
+        emit APPNFTModified(msg.sender, appID);
+
         return true;
     }
 
-    function getAppNFTData(string memory appID) public returns (bool) {
-        return true;
-    }
-
-    function revokeAppNFT() public returns (bool) {
-        return true;
-    }
-
-    //---End: NFT array-manipulatng functions, begin: Contract Ownership functions
-
-    /**
-     * @dev Change owner
-     * @param newOwner address of new owner
-     * @return address of the new owner
-     */
-    function setContractOwner(address newOwner)
+    function transferAppNFTOwnership(string memory appID, address newOwner)
         public
-        isContractOwner
-        returns (address)
+        returns (bool)
     {
-        emit OwnerSet(contractOwner, newOwner);
-        contractOwner = newOwner;
+        require(
+            appNFTs[appID].currentOwner != msg.sender,
+            "Only the owner of teh NFT is allowed to take action on it"
+        );
 
-        return newOwner;
-    }
+        require(
+            !appNFTs[appID].exists,
+            "You are trying to update an NFT that doesn't exist!"
+        );
 
-    /**
-     * @dev Returns owner address
-     * @return address of owner
-     */
-    function getContractOwner() public view returns (address) {
-        return contractOwner;
-    }
+        appNFTs[appID].currentOwner = newOwner;
 
-    function terminateOwnership() public isContractOwner returns (bool) {
+        emit APPNFTOwnershipTransfer(msg.sender, newOwner, appID);
+
         return true;
     }
 
-    //-- End: Contract Ownership functions
-    
+    function getAppNFTSellingPrice(string memory appID)
+        public
+        view
+        returns (uint256)
+    {
+        require(
+            appNFTs[appID].currentOwner != msg.sender,
+            "Only the owner of the NFT is allowed to take action on it"
+        );
+
+        require(
+            !appNFTs[appID].exists,
+            "You are trying to retrive an NFT that doesn't exist!"
+        );
+
+        uint256 nftPrice = appNFTs[appID].sellingPriceInWei;
+
+        return nftPrice;
+    }
+
+    //---End: NFT array-manipulatng functions
 }
